@@ -1,0 +1,7 @@
+psycopg2-binary>=2.9
+PyMySQL>=1.1
+python-dotenv>=1.0
+pytest>=8.0
+
+# Optional, only needed if you deploy airflow_dag.py:
+# apache-airflow>=2.9
