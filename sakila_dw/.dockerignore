@@ -1,0 +1,132 @@
+# ============================================================
+# .dockerignore for sakila_dw
+# 
+# This file prevents unnecessary files from being sent to the
+# Docker daemon, which can slow down the build process.
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# uv
+.uv.cache/
+uv.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Git
+.git/
+.gitignore
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Local configuration
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.sqlite
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Cache
+.cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Documentation
+*.md
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose*
+
+# Project-specific
+.ruff_cache/
+
+# Python type stubs
+*.pyi
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Data files (if any)
+*.csv
+*.json
+*.xml
+
+# Environment files
+*.env
+
+# Markdown
+*.md
+
+# Text files
+*.txt
+
+# YAML configs (these are mounted as volumes, not copied)
+*.yaml
+*.yml
+
+# Shell scripts (these are mounted as volumes)
+*.sh
+
+# SQL files (these are mounted as volumes)
+*.sql

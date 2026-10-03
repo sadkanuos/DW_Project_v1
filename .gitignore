@@ -1,0 +1,115 @@
+# ============================================================
+# Python Project .gitignore
+# Generated for DW_Project_v1
+# ============================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+# https://github.com/python-poetry/poetry/issues/818
+.env
+.venv
+env/
+venv/
+ENV/
+
+# uv (Astral Python package manager)
+.uv.cache/
+uv.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Local configuration files
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.sqlite
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node.js (if any frontend)
+node_modules/
+
+# Build artifacts
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Cache files
+.cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Project-specific
+.ruff_cache/
+
+# Python type stubs
+*.pyi
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# Git
+.git
+
+# Python virtual environment artifacts
+bin/
+include/
+lib/
+pip-selfcheck.json
+
+# Compiled Python
+*.pyc
+*.python-version
