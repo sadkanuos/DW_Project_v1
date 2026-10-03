@@ -8,9 +8,9 @@ import datetime
 
 import pytest
 
-from etl.extract_load_staging import TABLE_CONFIG, _coerce_value, _load_staging_table
+from etl.extract_load_staging import _coerce_value, _load_staging_table
 from etl.transform_load_mart import generate_date_rows
-from etl.utils import retry
+from etl.utils import retry, get_config
 
 
 # ---------------------------------------------------------------
@@ -66,28 +66,31 @@ def test_retry_only_catches_specified_exceptions():
 
 
 # ---------------------------------------------------------------
-# TABLE_CONFIG consistency
+# Staging config consistency (from YAML)
 # ---------------------------------------------------------------
 
-def test_table_config_has_query_and_columns_for_every_table():
-    for table_name, config in TABLE_CONFIG.items():
+def test_staging_config_has_query_and_columns_for_every_table():
+    staging_config = get_config().staging_config
+    for table_name, config in staging_config.items():
         assert "query" in config, f"{table_name} missing 'query'"
         assert "columns" in config, f"{table_name} missing 'columns'"
         assert len(config["columns"]) > 0, f"{table_name} has no columns"
 
 
-def test_table_config_columns_have_no_duplicates():
-    for table_name, config in TABLE_CONFIG.items():
+def test_staging_config_columns_have_no_duplicates():
+    staging_config = get_config().staging_config
+    for table_name, config in staging_config.items():
         columns = config["columns"]
         assert len(columns) == len(set(columns)), (
             f"{table_name} has duplicate columns: {columns}"
         )
 
 
-def test_table_config_queries_reference_every_declared_column():
+def test_staging_config_queries_reference_every_declared_column():
     # Rough smoke check: every declared column name should appear
     # somewhere in the query text (as a bare word or after AS).
-    for table_name, config in TABLE_CONFIG.items():
+    staging_config = get_config().staging_config
+    for table_name, config in staging_config.items():
         query_lower = config["query"].lower()
         for col in config["columns"]:
             assert col.lower() in query_lower, (
@@ -161,8 +164,9 @@ def test_coerce_value_passes_through_none():
 
 
 def test_customer_and_staff_configs_declare_active_as_bool_column():
-    assert "active" in TABLE_CONFIG["staging.customer"]["bool_columns"]
-    assert "active" in TABLE_CONFIG["staging.staff"]["bool_columns"]
+    staging_config = get_config().staging_config
+    assert "active" in staging_config["customer"].get("bool_columns", [])
+    assert "active" in staging_config["staff"].get("bool_columns", [])
 
 
 class _FakeCursor:
@@ -205,8 +209,10 @@ def test_load_staging_table_sends_real_bools_not_ints(monkeypatch):
 
     conn = _FakeConn()
     rows = [{"customer_id": 1, "active": 1}, {"customer_id": 2, "active": 0}]
+    # Create a generator that yields a single batch of rows
+    row_generator = (batch for batch in [rows])
     _load_staging_table(
-        conn, "staging.customer", ["customer_id", "active"], rows,
+        conn, "staging.customer", ["customer_id", "active"], row_generator,
         bool_columns=["active"],
     )
 

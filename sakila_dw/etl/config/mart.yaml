@@ -1,0 +1,100 @@
+# ============================================================
+# MART DIMENSION CONFIGURATION
+# All dimensions use INSERT ... ON CONFLICT DO UPDATE
+# Surrogate keys equal natural keys (customer_sk = customer_id, etc.)
+# ============================================================
+
+dimensions:
+  dim_customer:
+    source_table: "staging.customer"
+    select_columns: "customer_id, first_name, last_name, email, address, district, city, country, active, create_date"
+    pk_column: "customer_sk"
+    update_set: |
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      email = EXCLUDED.email,
+      address = EXCLUDED.address,
+      district = EXCLUDED.district,
+      city = EXCLUDED.city,
+      country = EXCLUDED.country,
+      active = EXCLUDED.active,
+      create_date = EXCLUDED.create_date,
+      loaded_at = now()
+
+  dim_film:
+    source_table: "staging.film"
+    select_columns: "film_id, title, description, release_year, rental_rate, rental_duration, replacement_cost, rating, length, primary_category"
+    pk_column: "film_sk"
+    update_set: |
+      title = EXCLUDED.title,
+      description = EXCLUDED.description,
+      release_year = EXCLUDED.release_year,
+      rental_rate = EXCLUDED.rental_rate,
+      rental_duration = EXCLUDED.rental_duration,
+      replacement_cost = EXCLUDED.replacement_cost,
+      rating = EXCLUDED.rating,
+      length = EXCLUDED.length,
+      primary_category = EXCLUDED.primary_category,
+      loaded_at = now()
+
+  dim_category:
+    source_table: "staging.category"
+    select_columns: "category_id, name"
+    pk_column: "category_id"
+    update_set: |
+      name = EXCLUDED.name,
+      loaded_at = now()
+
+  dim_store:
+    source_table: "staging.store"
+    select_columns: "store_id, manager_staff_id, address, district, city, country"
+    pk_column: "store_sk"
+    update_set: |
+      manager_staff_sk = EXCLUDED.manager_staff_sk,
+      address = EXCLUDED.address,
+      district = EXCLUDED.district,
+      city = EXCLUDED.city,
+      country = EXCLUDED.country,
+      loaded_at = now()
+
+  dim_staff:
+    source_table: "staging.staff"
+    select_columns: "staff_id, first_name, last_name, email, store_id, active"
+    pk_column: "staff_sk"
+    update_set: |
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      email = EXCLUDED.email,
+      store_sk = EXCLUDED.store_sk,
+      active = EXCLUDED.active,
+      loaded_at = now()
+
+# ============================================================
+# BRIDGE TABLES (Many-to-many relationships)
+# ============================================================
+
+bridge_tables:
+  bridge_film_category:
+    source_table: "staging.film_category"
+    select_columns: "film_id, category_id"
+    target_columns: "film_sk, category_id"
+    truncate: true
+
+# ============================================================
+# SPECIAL: dim_date (generated in Python, not from staging)
+# ============================================================
+
+dim_date:
+  generate: true
+  start_date_query: |
+    SELECT
+        LEAST(MIN(rental_date)::date, MIN(payment_date)::date),
+        GREATEST(
+            COALESCE(MAX(rental_date)::date, MAX(payment_date)::date),
+            COALESCE(MAX(return_date)::date, MAX(payment_date)::date)
+        )
+    FROM (
+        SELECT rental_date, return_date, NULL::timestamp AS payment_date FROM staging.rental
+        UNION ALL
+        SELECT NULL, NULL, payment_date FROM staging.payment
+    ) all_dates;

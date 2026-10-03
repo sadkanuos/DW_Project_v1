@@ -1,0 +1,60 @@
+# ============================================================
+# DATA QUALITY CHECKS
+# Each check returns a count of bad rows
+# severity: critical (fails batch) | warning (logs only)
+# ============================================================
+
+checks:
+  - name: fact_rental_orphan_customer
+    severity: critical
+    description: "Fact rental references non-existent customer"
+    sql: |
+      SELECT COUNT(*) FROM mart.fact_rental fr
+      LEFT JOIN mart.dim_customer dc ON dc.customer_sk = fr.customer_sk
+      WHERE dc.customer_sk IS NULL;
+
+  - name: fact_rental_orphan_film
+    severity: critical
+    description: "Fact rental references non-existent film"
+    sql: |
+      SELECT COUNT(*) FROM mart.fact_rental fr
+      LEFT JOIN mart.dim_film df ON df.film_sk = fr.film_sk
+      WHERE df.film_sk IS NULL;
+
+  - name: fact_payment_orphan_customer
+    severity: critical
+    description: "Fact payment references non-existent customer"
+    sql: |
+      SELECT COUNT(*) FROM mart.fact_payment fp
+      LEFT JOIN mart.dim_customer dc ON dc.customer_sk = fp.customer_sk
+      WHERE dc.customer_sk IS NULL;
+
+  - name: bridge_film_category_orphan_film
+    severity: critical
+    description: "Bridge table references non-existent film"
+    sql: |
+      SELECT COUNT(*) FROM mart.bridge_film_category bfc
+      LEFT JOIN mart.dim_film df ON df.film_sk = bfc.film_sk
+      WHERE df.film_sk IS NULL;
+
+  - name: dim_customer_null_email
+    severity: warning
+    description: "Customer dimension has NULL email"
+    sql: SELECT COUNT(*) FROM mart.dim_customer WHERE email IS NULL;
+
+  - name: fact_payment_nonpositive_amount
+    severity: warning
+    description: "Payment fact has non-positive amount"
+    sql: SELECT COUNT(*) FROM mart.fact_payment WHERE amount <= 0;
+
+  - name: mart_row_counts_nonzero
+    severity: critical
+    description: "Core mart tables must have data"
+    sql: |
+      SELECT
+          CASE WHEN
+              (SELECT COUNT(*) FROM mart.dim_customer) > 0 AND
+              (SELECT COUNT(*) FROM mart.dim_film) > 0 AND
+              (SELECT COUNT(*) FROM mart.fact_rental) > 0 AND
+              (SELECT COUNT(*) FROM mart.fact_payment) > 0
+          THEN 0 ELSE 1 END;

@@ -2,88 +2,60 @@
 Post-load data quality checks. Each check returns (passed: bool,
 details: str) and is recorded to etl.dq_results by the caller.
 
-`run_all_checks` returns True only if every *critical* check passes;
-warning-severity checks are logged but don't fail the batch.
+Checks are loaded from YAML configuration.
+All functions include full type hints.
 """
 
-from etl.utils import get_pg_connection, logger, record_dq_result
+from typing import Any, Dict, List, Optional
 
-# (check_name, severity, SQL that returns a single count of BAD rows)
-CHECKS = [
-    (
-        "fact_rental_orphan_customer", "critical",
-        """
-        SELECT COUNT(*) FROM mart.fact_rental fr
-        LEFT JOIN mart.dim_customer dc ON dc.customer_sk = fr.customer_sk
-        WHERE dc.customer_sk IS NULL;
-        """,
-    ),
-    (
-        "fact_rental_orphan_film", "critical",
-        """
-        SELECT COUNT(*) FROM mart.fact_rental fr
-        LEFT JOIN mart.dim_film df ON df.film_sk = fr.film_sk
-        WHERE df.film_sk IS NULL;
-        """,
-    ),
-    (
-        "fact_payment_orphan_customer", "critical",
-        """
-        SELECT COUNT(*) FROM mart.fact_payment fp
-        LEFT JOIN mart.dim_customer dc ON dc.customer_sk = fp.customer_sk
-        WHERE dc.customer_sk IS NULL;
-        """,
-    ),
-    (
-        "bridge_film_category_orphan_film", "critical",
-        """
-        SELECT COUNT(*) FROM mart.bridge_film_category bfc
-        LEFT JOIN mart.dim_film df ON df.film_sk = bfc.film_sk
-        WHERE df.film_sk IS NULL;
-        """,
-    ),
-    (
-        "dim_customer_null_email", "warning",
-        "SELECT COUNT(*) FROM mart.dim_customer WHERE email IS NULL;",
-    ),
-    (
-        "fact_payment_nonpositive_amount", "warning",
-        "SELECT COUNT(*) FROM mart.fact_payment WHERE amount <= 0;",
-    ),
-    (
-        "mart_row_counts_nonzero", "critical",
-        """
-        SELECT
-            CASE WHEN
-                (SELECT COUNT(*) FROM mart.dim_customer) > 0 AND
-                (SELECT COUNT(*) FROM mart.dim_film) > 0 AND
-                (SELECT COUNT(*) FROM mart.fact_rental) > 0 AND
-                (SELECT COUNT(*) FROM mart.fact_payment) > 0
-            THEN 0 ELSE 1 END;
-        """,
-    ),
-]
+import psycopg2.extensions
+
+from etl.utils import get_pg_connection, logger, record_dq_result, get_config
 
 
-def run_all_checks(pg_conn, batch_id):
+def run_all_checks(
+    pg_conn: psycopg2.extensions.connection,
+    batch_id: int,
+) -> bool:
     """
-    Run every check in CHECKS, record each to etl.dq_results, and
+    Run every check from configuration, record each to etl.dq_results, and
     return True iff all *critical* checks passed.
+
+
+    Args:
+        pg_conn: PostgreSQL connection
+        batch_id: Current batch ID for audit logging
+
+    Returns:
+        True if all critical checks passed, False otherwise
     """
+    config = get_config()
     all_critical_passed = True
-    for check_name, severity, sql in CHECKS:
+
+    # Single iteration over checks from YAML config
+    for check_def in config.dq_checks:
+        check_name = check_def["name"]
+        severity = check_def["severity"]
+        sql = check_def["sql"]
+
         with pg_conn.cursor() as cur:
             cur.execute(sql)
             bad_rows = cur.fetchone()[0]
+
         passed = bad_rows == 0
         details = f"{bad_rows} offending row(s)" if not passed else "ok"
+
         record_dq_result(pg_conn, batch_id, check_name, passed, severity, details)
         logger.info(
             "DQ check '%s' [%s]: %s (%s)",
-            check_name, severity, "PASS" if passed else "FAIL", details,
+            check_name,
+            severity,
+            "PASS" if passed else "FAIL",
+            details,
         )
         if not passed and severity == "critical":
             all_critical_passed = False
+
     return all_critical_passed
 
 
@@ -91,7 +63,9 @@ if __name__ == "__main__":
     conn = get_pg_connection()
     try:
         with conn.cursor() as c:
-            c.execute("INSERT INTO etl.batch (status) VALUES ('running') RETURNING batch_id;")
+            c.execute(
+                "INSERT INTO etl.batch (status) VALUES ('running') RETURNING batch_id;"
+            )
             bid = c.fetchone()[0]
         conn.commit()
         ok = run_all_checks(conn, bid)
