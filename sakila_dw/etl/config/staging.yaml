@@ -28,7 +28,7 @@ customer:
     - last_update
   bool_columns:
     - active
-  batch_size: 5000
+  batch_size: ${ETL_BATCH_SIZE:-5000}
 
 film:
   query: |

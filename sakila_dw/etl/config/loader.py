@@ -8,8 +8,6 @@ import re
 from typing import Any, Dict
 import yaml
 
-from etl import config
-
 
 def resolve_env_vars(value: Any) -> Any:
     """

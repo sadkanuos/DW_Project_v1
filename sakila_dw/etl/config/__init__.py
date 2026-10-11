@@ -66,7 +66,7 @@ class EtlConfig:
     staging_schema: str = "staging"
     mart_schema: str = "mart"
     etl_schema: str = "etl"
-    config_dir: Path = field(default_factory=lambda: Path(__file__).parent / "config")
+    config_dir: Path = field(default_factory=lambda: Path(__file__).parent)
 
     @property
     def staging_config_path(self) -> Path:
