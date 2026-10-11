@@ -1,0 +1,183 @@
+staging.customer:
+  query:  |
+    SELECT 
+      c.customer_id, 
+      c.first_name, 
+      c.last_name, 
+      c.email,
+      a.address,
+      a.district,
+      ci.city,
+      co.country,
+      c.active,
+      c.create_date,
+      c.last_update
+    FROM customer c
+    JOIN address a ON a.address_id = c.address_id
+    JOIN city ci ON ci.city_id = a.city_id
+    JOIN country co ON co.country_id = ci.country_id;
+  columns:
+    - customer_id
+    - first_name
+    - last_name
+    - email
+    - address
+    - district
+    - city
+    - country 
+    - active
+    - create_date
+    - last_update
+  bool_columns:
+    - active
+  batch_size: 5000
+
+staging.film:
+  query:  |
+    SELECT 
+      f.film_id,
+      f.title,
+      f.description,
+      f.release_year,
+      f.rental_rate,
+      f.rental_duration,
+      f.replacement_cost,
+      f.rating,
+      f.length,
+        (
+          SELECT
+            cat.name
+          FROM
+            film_category fc2
+          JOIN
+            category cat ON cat.category_id = fc2.category_id
+          WHERE
+            fc2.film_id = f.film_id
+          ORDER BY
+            fc2.category_id
+          LIMIT 1
+        ) as primary_category
+    FROM film f;
+  columns:
+    - film_id
+    - title
+    - description
+    - release_year
+    - rental_rate
+    - rental_duration
+    - replacement_cost
+    - rating
+    - length
+    - primary_category
+    - last_update
+  batch_size: 10000
+
+staging.category:
+  query: SELECT category_id, name, last_update FROM category;
+  columns: 
+    - category_id
+    - name
+    - last_update
+  batch_size: 1000
+
+staging.film_category:
+  query: SELECT film_id, category_id, last_update FROM film_category;
+  columns:
+    - film_id
+    - category_id
+    - last_update
+  batch_size: 5000
+
+staging.store:
+  query: |
+    SELECT 
+      s.store_id,
+      s.manager_staff_id,
+      a.address,
+      a.district,
+      ci.city,
+      co.country,
+      s.last_update
+    FROM store s
+    JOIN address a ON a.address_id = s.address_id
+    JOIN city ci ON ci.city_id = a.city_id
+    JOIN country co ON co.country_id = ci.country_id
+  columns:
+    - store_id
+    - manager_staff_id
+    - address
+    - district
+    - city
+    - country
+    - last_update
+  batch_size: 2000
+
+staging.staff: 
+  query: |
+    SELECT 
+      staff_id, 
+      first_name, 
+      last_name, 
+      email, 
+      store_id, 
+      active, 
+      last_update
+    FROM staff;
+  columns:
+    - staff_id
+    - first_name
+    - last_name
+    - email
+    - store_id
+    - active
+    - last_update
+  bool_columns:
+    - active
+  batch_size: 2000
+
+staging.rental:
+  query:  |
+    SELECT
+      r.rental_id,
+      r.rental_date,
+      r.return_date,
+      r.inventory_id,
+      r.customer_id,
+      r.staff_id,
+      i.film_id,
+      i.store_id,
+      r.last_update
+    FROM rental r
+    JOIN inventory i on i.inventory_id = r.inventory_id
+  columns:
+    - rental_id
+    - rental_date
+    - return_date
+    - inventory_id
+    - customer_id
+    - staff_id
+    - film_id
+    - store_id
+    - last_update
+  batch_size: 10000
+
+staging.payment:
+  query:  |
+    SELECT
+      payment_id, 
+      customer_id,
+      staff_id,
+      rental_id,
+      amount,
+      payment_date,
+      last_update
+    FROM payment;
+  columns:
+    - payment_id
+    - customer_id
+    - staff_id
+    - rental_id
+    - amount
+    - payment_date
+    - last_update
+  batch_size: 10000

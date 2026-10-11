@@ -1,215 +1,174 @@
 """
 Transform staging tables into the mart star schema.
-
-All dimensions are overwrite (one row per natural key, upserted via
-INSERT ... ON CONFLICT DO UPDATE). Facts are loaded from staging with
-surrogate keys resolved by straightforward joins (trivial here since
-surrogate keys equal natural keys, but written as real joins so the
-pattern generalizes if that ever changes) and de-duplicated on their
-natural key so reruns don't create duplicate fact rows.
+All configurations for dimensions and bridge tables are loaded from YAML.
+All functions include full type hints.
 """
 
 import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-from etl.utils import get_pg_connection, logger
+import psycopg2.extensions
+from psycopg2.extras import execute_values
 
-
-def _upsert_dim_customer(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mart.dim_customer (
-                customer_sk, first_name, last_name, email,
-                address, district, city, country, active, create_date
-            )
-            SELECT
-                customer_id, first_name, last_name, email,
-                address, district, city, country, active, create_date
-            FROM staging.customer
-            ON CONFLICT (customer_sk) DO UPDATE SET
-                first_name = EXCLUDED.first_name,
-                last_name  = EXCLUDED.last_name,
-                email      = EXCLUDED.email,
-                address    = EXCLUDED.address,
-                district   = EXCLUDED.district,
-                city       = EXCLUDED.city,
-                country    = EXCLUDED.country,
-                active     = EXCLUDED.active,
-                create_date = EXCLUDED.create_date,
-                loaded_at  = now();
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.dim_customer;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
+from etl.utils import get_pg_connection, logger, get_config
 
 
-def _upsert_dim_film(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mart.dim_film (
-                film_sk, title, description, release_year, rental_rate,
-                rental_duration, replacement_cost, rating, length, primary_category
-            )
-            SELECT
-                film_id, title, description, release_year, rental_rate,
-                rental_duration, replacement_cost, rating, length, primary_category
-            FROM staging.film
-            ON CONFLICT (film_sk) DO UPDATE SET
-                title             = EXCLUDED.title,
-                description       = EXCLUDED.description,
-                release_year      = EXCLUDED.release_year,
-                rental_rate       = EXCLUDED.rental_rate,
-                rental_duration   = EXCLUDED.rental_duration,
-                replacement_cost  = EXCLUDED.replacement_cost,
-                rating            = EXCLUDED.rating,
-                length            = EXCLUDED.length,
-                primary_category  = EXCLUDED.primary_category,
-                loaded_at         = now();
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.dim_film;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
-
-
-def _upsert_dim_category(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mart.dim_category (category_id, name)
-            SELECT category_id, name FROM staging.category
-            ON CONFLICT (category_id) DO UPDATE SET
-                name = EXCLUDED.name,
-                loaded_at = now();
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.dim_category;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
-
-
-def _upsert_dim_store(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mart.dim_store (
-                store_sk, manager_staff_sk, address, district, city, country
-            )
-            SELECT store_id, manager_staff_id, address, district, city, country
-            FROM staging.store
-            ON CONFLICT (store_sk) DO UPDATE SET
-                manager_staff_sk = EXCLUDED.manager_staff_sk,
-                address   = EXCLUDED.address,
-                district  = EXCLUDED.district,
-                city      = EXCLUDED.city,
-                country   = EXCLUDED.country,
-                loaded_at = now();
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.dim_store;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
-
-
-def _upsert_dim_staff(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mart.dim_staff (
-                staff_sk, first_name, last_name, email, store_sk, active
-            )
-            SELECT staff_id, first_name, last_name, email, store_id, active
-            FROM staging.staff
-            ON CONFLICT (staff_sk) DO UPDATE SET
-                first_name = EXCLUDED.first_name,
-                last_name  = EXCLUDED.last_name,
-                email      = EXCLUDED.email,
-                store_sk   = EXCLUDED.store_sk,
-                active     = EXCLUDED.active,
-                loaded_at  = now();
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.dim_staff;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
-
-
-def _load_bridge_film_category(pg_conn):
-    with pg_conn.cursor() as cur:
-        cur.execute("TRUNCATE TABLE mart.bridge_film_category;")
-        cur.execute(
-            """
-            INSERT INTO mart.bridge_film_category (film_sk, category_id)
-            SELECT film_id, category_id FROM staging.film_category;
-            """
-        )
-        cur.execute("SELECT COUNT(*) FROM mart.bridge_film_category;")
-        count = cur.fetchone()[0]
-    pg_conn.commit()
-    return count
-
-
-# ---------------------------------------------------------------
-# dim_date: generated in Python, not sourced from staging.
-# ---------------------------------------------------------------
-
-def generate_date_rows(start_date, end_date):
+def _upsert_dim(
+    pg_conn: psycopg2.extensions.connection,
+    dim_name: str,
+    dim_config: Dict[str, Any],
+) -> int:
     """
-    Return a list of dim_date row tuples covering [start_date, end_date]
-    inclusive. Pure function -- exercised directly in unit tests.
+    Generic dimension upsert function using YAML config.
+
+    All dimensions use INSERT ... ON CONFLICT DO UPDATE pattern.
+    Surrogate keys equal natural keys.
+
+    Args:
+        pg_conn: PostgreSQL connection
+        dim_name: Name of the dimension table (e.g., 'dim_customer')
+        dim_config: Configuration dict from YAML with keys:
+            - source_table: Source staging table
+            - select_columns: Columns to select
+            - pk_column: Primary key column
+            - update_set: ON CONFLICT update set clause
+
+    Returns:
+        Number of rows in the dimension after upsert
     """
-    rows = []
+    with pg_conn.cursor() as cur:
+        source_table = dim_config["source_table"]
+        select_columns = dim_config["select_columns"]
+        pk_column = dim_config["pk_column"]
+        update_set = dim_config["update_set"]
+
+        cur.execute(f"""
+            INSERT INTO mart.{dim_name} ({select_columns})
+            SELECT {select_columns} FROM {source_table}
+            ON CONFLICT ({pk_column}) DO UPDATE SET {update_set};
+        """)
+        cur.execute(f"SELECT COUNT(*) FROM mart.{dim_name};")
+        count = cur.fetchone()[0]
+    pg_conn.commit()
+    return count
+
+
+def _load_bridge(
+    pg_conn: psycopg2.extensions.connection,
+    bridge_name: str,
+    bridge_config: Dict[str, Any],
+) -> int:
+    """
+    Generic bridge table loader using YAML config.
+
+    Args:
+        pg_conn: PostgreSQL connection
+        bridge_name: Name of the bridge table (e.g., 'bridge_film_category')
+        bridge_config: Configuration dict from YAML with keys:
+            - source_table: Source staging table
+            - select_columns: Columns to select from source
+            - target_columns: Columns in target bridge table
+            - truncate: Whether to truncate before loading
+
+    Returns:
+        Number of rows loaded into bridge table
+    """
+    with pg_conn.cursor() as cur:
+        if bridge_config.get("truncate", True):
+            cur.execute(f"TRUNCATE TABLE mart.{bridge_name};")
+
+        source_table = bridge_config["source_table"]
+        select_columns = bridge_config["select_columns"]
+        target_columns = bridge_config["target_columns"]
+
+        cur.execute(f"""
+            INSERT INTO mart.{bridge_name} ({target_columns})
+            SELECT {select_columns} FROM {source_table};
+        """)
+        cur.execute(f"SELECT COUNT(*) FROM mart.{bridge_name};")
+        count = cur.fetchone()[0]
+    pg_conn.commit()
+    return count
+
+
+def generate_date_rows(
+    start_date: datetime.date, end_date: datetime.date
+) -> List[Tuple[Any, ...]]:
+    """
+    Return a list of dim_date row tuples covering [start_date, end_date] inclusive.
+    Pure function -- exercised directly in unit tests.
+
+    Args:
+        start_date: First date to include
+        end_date: Last date to include
+
+    Returns:
+        List of tuples, each representing a row in dim_date
+    """
+    rows: List[Tuple[Any, ...]] = []
     current = start_date
     one_day = datetime.timedelta(days=1)
     while current <= end_date:
         date_key = int(current.strftime("%Y%m%d"))
-        rows.append((
-            date_key,
-            current,
-            current.year,
-            (current.month - 1) // 3 + 1,
-            current.month,
-            current.strftime("%B"),
-            current.day,
-            current.strftime("%A"),
-            int(current.strftime("%W")),
-            current.weekday() >= 5,
-        ))
+        rows.append(
+            (
+                date_key,
+                current,
+                current.year,
+                (current.month - 1) // 3 + 1,
+                current.month,
+                current.strftime("%B"),
+                current.day,
+                current.strftime("%A"),
+                int(current.strftime("%W")),
+                current.weekday() >= 5,
+            )
+        )
         current += one_day
     return rows
 
 
-def _load_dim_date(pg_conn):
+def _load_dim_date(pg_conn: psycopg2.extensions.connection) -> int:
+    """
+    Load dim_date table by generating rows from min/max dates in staging.
+    This is a special case - generated in Python, not from staging tables.
+
+    Args:
+        pg_conn: PostgreSQL connection
+
+    Returns:
+        Number of rows loaded into dim_date
+    """
+    config = get_config()
+    mart_config = config.mart_config
+    dim_date_config = mart_config.get("dim_date", {})
+
+    start_date_query = dim_date_config.get(
+        "start_date_query",
+        """
+        SELECT
+            LEAST(MIN(rental_date)::date, MIN(payment_date)::date),
+            GREATEST(
+                COALESCE(MAX(rental_date)::date, MAX(payment_date)::date),
+                COALESCE(MAX(return_date)::date, MAX(payment_date)::date)
+            )
+        FROM (
+            SELECT rental_date, return_date, NULL::timestamp AS payment_date FROM staging.rental
+            UNION ALL
+            SELECT NULL, NULL, payment_date FROM staging.payment
+        ) all_dates;
+    """,
+    )
+
     with pg_conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                LEAST(MIN(rental_date)::date, MIN(payment_date)::date),
-                GREATEST(
-                    COALESCE(MAX(rental_date)::date, MAX(payment_date)::date),
-                    COALESCE(MAX(return_date)::date, MAX(payment_date)::date)
-                )
-            FROM (
-                SELECT rental_date, return_date, NULL::timestamp AS payment_date FROM staging.rental
-                UNION ALL
-                SELECT NULL, NULL, payment_date FROM staging.payment
-            ) all_dates;
-            """
-        )
+        cur.execute(start_date_query)
         min_date, max_date = cur.fetchone()
         if min_date is None or max_date is None:
             return 0
 
         rows = generate_date_rows(min_date, max_date)
         cur.execute("TRUNCATE TABLE mart.dim_date CASCADE;")
-        from psycopg2.extras import execute_values
+
         execute_values(
             cur,
             """
@@ -224,11 +183,8 @@ def _load_dim_date(pg_conn):
     return len(rows)
 
 
-# ---------------------------------------------------------------
-# Facts
-# ---------------------------------------------------------------
-
-def _load_fact_rental(pg_conn):
+def _load_fact_rental(pg_conn: psycopg2.extensions.connection) -> int:
+    """Load fact_rental table from staging with surrogate key resolution."""
     with pg_conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE mart.fact_rental;")
         cur.execute(
@@ -262,7 +218,8 @@ def _load_fact_rental(pg_conn):
     return count
 
 
-def _load_fact_payment(pg_conn):
+def _load_fact_payment(pg_conn: psycopg2.extensions.connection) -> int:
+    """Load fact_payment table from staging with surrogate key resolution."""
     with pg_conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE mart.fact_payment;")
         cur.execute(
@@ -291,32 +248,57 @@ def _load_fact_payment(pg_conn):
     return count
 
 
-# ---------------------------------------------------------------
-# Orchestration entry point for this module
-# ---------------------------------------------------------------
+def load_all_dims(pg_conn: Optional[psycopg2.extensions.connection] = None) -> int:
+    """
+    Load all dimensions and bridge tables using config from YAML.
 
-def load_all_dims(pg_conn=None):
+    Args:
+        pg_conn: Optional PostgreSQL connection (created if None)
+
+    Returns:
+        Total number of rows loaded across all dimensions
+    """
+    config = get_config()
     own_pg = pg_conn is None
     pg_conn = pg_conn or get_pg_connection()
+
     try:
-        counts = {
-            "dim_customer": _upsert_dim_customer(pg_conn),
-            "dim_film": _upsert_dim_film(pg_conn),
-            "dim_category": _upsert_dim_category(pg_conn),
-            "dim_store": _upsert_dim_store(pg_conn),
-            "dim_staff": _upsert_dim_staff(pg_conn),
-            "bridge_film_category": _load_bridge_film_category(pg_conn),
-            "dim_date": _load_dim_date(pg_conn),
-        }
-        for name, count in counts.items():
-            logger.info("Loaded %s: %d rows", name, count)
+        counts: Dict[str, int] = {}
+        mart_config = config.mart_config
+
+        # Load dimensions
+        for dim_name, dim_config in mart_config.get("dimensions", {}).items():
+            count = _upsert_dim(pg_conn, dim_name, dim_config)
+            counts[dim_name] = count
+            logger.info("Loaded %s: %d rows", dim_name, count)
+
+        # Load bridge tables
+        for bridge_name, bridge_config in mart_config.get("bridge_tables", {}).items():
+            count = _load_bridge(pg_conn, bridge_name, bridge_config)
+            counts[bridge_name] = count
+            logger.info("Loaded %s: %d rows", bridge_name, count)
+
+        # Load date dimension (special case - generated in Python)
+        count = _load_dim_date(pg_conn)
+        counts["dim_date"] = count
+        logger.info("Loaded dim_date: %d rows", count)
+
         return sum(counts.values())
     finally:
         if own_pg:
             pg_conn.close()
 
 
-def load_all_facts(pg_conn=None):
+def load_all_facts(pg_conn: Optional[psycopg2.extensions.connection] = None) -> int:
+    """
+    Load all fact tables.
+
+    Args:
+        pg_conn: Optional PostgreSQL connection (created if None)
+
+    Returns:
+        Total number of rows loaded across all fact tables
+    """
     own_pg = pg_conn is None
     pg_conn = pg_conn or get_pg_connection()
     try:

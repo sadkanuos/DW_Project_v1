@@ -1,0 +1,86 @@
+# ============================================================
+# Docker Compose Configuration for sakila_dw Development
+# 
+# This file provisions MySQL and PostgreSQL databases for local development.
+# 
+# Usage:
+#   Start databases:     docker-compose up -d
+#   Stop databases:      docker-compose down
+#   View logs:          docker-compose logs -f
+#   Connect to MySQL:   docker-compose exec mysql mysql -u root -p
+#   Connect to Postgres: docker-compose exec postgres psql -U postgres
+#
+# Environment variables are loaded from .env file (optional)
+# ============================================================
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Data Warehouse Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sakila_dw_postgres
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${PG_DB:-sakila_dw}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql:ro
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DB:-sakila_dw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sakila_network
+    restart: unless-stopped
+
+  # MySQL - Source Sakila Database
+  mysql:
+    image: mysql:8.0
+    container_name: sakila_dw_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysqlroot}
+      MYSQL_DATABASE: ${MYSQL_DB:-sakila}
+      MYSQL_USER: ${MYSQL_USER:-sakila}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sakila}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql:ro
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sakila_network
+    restart: unless-stopped
+
+  # Optional: Adminer for database management UI
+  adminer:
+    image: adminer:4.8
+    container_name: sakila_dw_adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - mysql
+    networks:
+      - sakila_network
+    restart: unless-stopped
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  mysql_data:
+
+networks:
+  sakila_network:
+    driver: bridge
