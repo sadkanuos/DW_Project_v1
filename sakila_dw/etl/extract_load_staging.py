@@ -13,7 +13,6 @@ import pymysql.connections
 from psycopg2.extras import execute_values
 
 from etl.utils import get_mysql_connection, get_pg_connection, logger, retry, get_config
-from etl.utils import get_mysql_connection, get_pg_connection, logger, retry
 
 
 @retry()

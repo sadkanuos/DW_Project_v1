@@ -37,6 +37,15 @@ ENV/
 .uv.cache/
 uv.lock
 
+# Docker
+.docker/
+
+# Database provisioning
+docker/
+
+# vibe artifacts
+vibe-artifacts/
+
 # IDE
 .idea/
 .vscode/

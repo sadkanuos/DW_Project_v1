@@ -7,6 +7,7 @@ import os
 import yaml
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+from etl.config.loader import load_yaml_config
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
@@ -86,16 +87,14 @@ class EtlConfig:
     def staging_config(self) -> Dict[str, Any]:
         """Load staging table configurations from YAML."""
         if self.staging_config_path.exists():
-            with open(self.staging_config_path, encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+            return load_yaml_config(self.staging_config_path)
         return {}
 
     @property
     def mart_config(self) -> Dict[str, Any]:
         """Load mart dimension & bridge table configurations from YAML."""
         if self.mart_config_path.exists():
-            with open(self.mart_config_path, encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+            return load_yaml_config(self.mart_config_path)
         return {}
 
     @property

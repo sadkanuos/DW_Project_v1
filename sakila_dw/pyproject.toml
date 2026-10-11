@@ -19,6 +19,7 @@ description = "Sakila Data Warehouse ETL Pipeline"
 dependencies = [
     "psycopg2-binary>=2.9",
     "PyMySQL>=1.1",
+    "pytest>=8.3.5",
     "python-dotenv>=1.0",
     "PyYAML>=6.0",
 ]
@@ -41,3 +42,8 @@ airflow = [
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+
+[dependency-groups]
+dev = [
+    "pyyaml>=6.0.3",
+]

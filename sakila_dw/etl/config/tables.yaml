@@ -56,8 +56,8 @@ staging.film:
           ORDER BY
             fc2.category_id
           LIMIT 1
-        ) as primary_category,
-      FROM film f;
+        ) as primary_category
+    FROM film f;
   columns:
     - film_id
     - title
@@ -69,7 +69,7 @@ staging.film:
     - rating
     - length
     - primary_category
-    - last_upate
+    - last_update
   batch_size: 10000
 
 staging.category:
@@ -143,7 +143,7 @@ staging.rental:
       r.return_date,
       r.inventory_id,
       r.customer_id,
-      r.staff_if,
+      r.staff_id,
       i.film_id,
       i.store_id,
       r.last_update
